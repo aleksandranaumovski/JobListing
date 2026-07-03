@@ -1,0 +1,48 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: nvd
+      POSTGRES_PASSWORD: nvd
+      POSTGRES_DB: nvd_jobs
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nvd -d nvd_jobs"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://nvd:nvd@postgres:5432/nvd_jobs
+      SEED_DATA_DIR: /app/nvd-source
+      SCRAPER_DATA_DIR: /app/imported
+      ENABLE_SCHEDULER: "true"
+      SCHEDULER_TIMEZONE: Europe/Skopje
+      SCRAPER_SCHEDULE_HOUR: "0"
+      SCRAPER_SCHEDULE_MINUTE: "0"
+      SCRAPER_DEFAULT_LIMIT: "5"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+    depends_on:
+      - backend
+    ports:
+      - "4200:80"
+
+volumes:
+  postgres_data:

@@ -1,0 +1,82 @@
+# NVD Jobs
+
+Full-stack job advertisement application built from the scraped JSON files and scraper scripts in this repository.
+
+## Structure
+
+- `Scrapping_Agencija/`, `Scrapping_Jobs/`, `Scrapping_KarieraMk/` original scraping scripts and seed JSON.
+- `backend/` FastAPI, SQLAlchemy and Alembic application.
+- `frontend/` Angular standalone-components application.
+- `database/` PostgreSQL initialization.
+- `docker/` Dockerfiles and Nginx config.
+
+## Run
+
+```bash
+docker compose up --build
+```
+
+Then open:
+
+- Frontend: http://localhost:4200
+- API docs: http://localhost:8000/api/docs
+- Health check: http://localhost:8000/api/health
+
+The backend runs Alembic migrations and imports all JSON seed files on startup. The importer preserves each original advertisement in `jobs.source_payload` and normalizes common fields for search and filtering.
+
+## API
+
+- `GET /api/jobs` lists jobs with pagination, search, filters and `sort=newest|oldest`.
+- `GET /api/jobs/{id}` returns details.
+- `GET /api/jobs/filters` returns available filter values.
+- `POST /api/admin/import` re-imports JSON seed data.
+- `POST /api/admin/scrape/{scraper_name}?limit=3` runs one existing scraper (`kariera`, `jobs`, `mkjob`) and imports the output.
+- `POST /api/admin/scrape-all` runs all scraper integrations immediately.
+- `GET /api/admin/scheduler` shows the daily scheduler status.
+
+## Scheduled Scraping
+
+The backend starts a scheduler with Docker and runs all integrated website scrapers every day at `00:00` in the `Europe/Skopje` timezone. The schedule is controlled with:
+
+- `ENABLE_SCHEDULER=true`
+- `SCHEDULER_TIMEZONE=Europe/Skopje`
+- `SCRAPER_SCHEDULE_HOUR=0`
+- `SCRAPER_SCHEDULE_MINUTE=0`
+- `SCRAPER_DEFAULT_LIMIT=5`
+
+The importer skips advertisements whose known `active_until` date is already in the past and deletes expired rows from the database after each import. Records without an expiry date are kept because the source did not provide enough information to prove they ended.
+
+## Data Model
+
+The discovered source data has one canonical advertisement shape with source-specific optional fields:
+
+- Kariera: `id`, `title`, `company`, `location`, `active_until`, `salary`, `is_new`, `url`, `scraped_at`.
+- Jobs.com.mk: `title`, `url`, `location`, `date_posted`, `raw_text`.
+- MKJob: `title`, `url`, or cleaned `title`, `city`, `posted_date`, `valid_until`, `raw`.
+
+The relational schema uses:
+
+- `sources`: source name and base URL.
+- `jobs`: normalized searchable fields plus `source_payload` JSONB for the original scraped record.
+
+Indexes are added for pagination, source lookup, city, company, category, employment type, posted date and a PostgreSQL full-text search vector.
+
+## Development
+
+Backend:
+
+```bash
+cd backend
+pip install -r requirements.txt
+alembic upgrade head
+python -m app.seed
+uvicorn app.main:app --reload
+```
+
+Frontend:
+
+```bash
+cd frontend
+npm install
+npm start
+```
