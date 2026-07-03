@@ -63,7 +63,7 @@ export class JobDetailComponent implements OnInit {
     this.api.detail(id).subscribe({
       next: (job) => {
         this.job.set(job);
-        this.title.setTitle(`${job.title} | NVD Jobs`);
+        this.title.setTitle(`${job.title} | ТвојПознаник`);
         this.loading.set(false);
       },
       error: () => {
