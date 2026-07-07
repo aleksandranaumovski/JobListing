@@ -29,6 +29,10 @@ services:
       SCRAPER_SCHEDULE_HOUR: "0"
       SCRAPER_SCHEDULE_MINUTE: "0"
       SCRAPER_DEFAULT_LIMIT: "5"
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      ACCESS_TOKEN_EXPIRE_MINUTES: "720"
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@nvdjobs.mk}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
     depends_on:
       postgres:
         condition: service_healthy

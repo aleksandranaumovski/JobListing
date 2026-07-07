@@ -29,7 +29,12 @@ class Job(Base):
         Index("ix_jobs_category", "category"),
         Index("ix_jobs_employment_type", "employment_type"),
         Index("ix_jobs_posted_at", "posted_at"),
+        Index("ix_jobs_status", "status"),
     )
+
+    STATUS_PENDING = "pending"
+    STATUS_APPROVED = "approved"
+    STATUS_REJECTED = "rejected"
 
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))
     source_id: Mapped[int] = mapped_column(ForeignKey("sources.id", ondelete="CASCADE"), index=True)
@@ -47,6 +52,10 @@ class Job(Base):
     active_until: Mapped[datetime | None] = mapped_column(Date)
     salary: Mapped[str | None] = mapped_column(String(250))
     is_new: Mapped[bool] = mapped_column(Boolean, default=False)
+    status: Mapped[str] = mapped_column(String(20), default=STATUS_APPROVED)
+    created_by_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("users.id", ondelete="SET NULL"), index=True, default=None
+    )
     raw_text: Mapped[str | None] = mapped_column(Text)
     source_payload: Mapped[dict] = mapped_column(JSONB, default=dict)
     scraped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

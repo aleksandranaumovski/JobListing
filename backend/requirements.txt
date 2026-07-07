@@ -1,9 +1,11 @@
 alembic==1.16.2
 APScheduler==3.11.0
+bcrypt==4.3.0
 beautifulsoup4==4.13.4
 fastapi==0.115.14
 psycopg[binary]==3.2.9
 pydantic-settings==2.10.1
+PyJWT==2.10.1
 python-dotenv==1.1.1
 requests==2.32.4
 SQLAlchemy==2.0.41

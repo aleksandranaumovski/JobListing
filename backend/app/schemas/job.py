@@ -18,6 +18,7 @@ class JobRead(BaseModel):
     salary: str | None = None
     is_new: bool = False
     scraped_at: datetime | None = None
+    status: str = "approved"
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -44,3 +45,26 @@ class FiltersRead(BaseModel):
     companies: list[str]
     categories: list[str]
     employment_types: list[str]
+
+
+class JobSubmissionCreate(BaseModel):
+    title: str = Field(min_length=3, max_length=500)
+    company: str = Field(min_length=1, max_length=300)
+    city: str | None = Field(default=None, max_length=120)
+    location: str | None = Field(default=None, max_length=250)
+    category: str | None = Field(default=None, max_length=120)
+    employment_type: str | None = Field(default=None, max_length=120)
+    salary: str | None = Field(default=None, max_length=250)
+    url: str | None = Field(default=None, max_length=1000)
+    description: str | None = Field(default=None, max_length=20000)
+    active_until: date | None = None
+
+
+class ModeratedJobRead(JobRead):
+    submitted_by: str | None = None
+    created_at: datetime | None = None
+
+
+class ModeratedJobPage(BaseModel):
+    items: list[ModeratedJobRead]
+    meta: PageMeta

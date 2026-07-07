@@ -26,13 +26,38 @@ The backend runs Alembic migrations and imports all JSON seed files on startup. 
 
 ## API
 
-- `GET /api/jobs` lists jobs with pagination, search, filters and `sort=newest|oldest`.
-- `GET /api/jobs/{id}` returns details.
+- `GET /api/jobs` lists approved jobs with pagination, search, filters and `sort=newest|oldest`.
+- `GET /api/jobs/{id}` returns details (pending/rejected jobs are visible only to their owner and admins).
 - `GET /api/jobs/filters` returns available filter values.
-- `POST /api/admin/import` re-imports JSON seed data.
-- `POST /api/admin/scrape/{scraper_name}?limit=3` runs one existing scraper (`kariera`, `jobs`, `mkjob`) and imports the output.
-- `POST /api/admin/scrape-all` runs all scraper integrations immediately.
-- `GET /api/admin/scheduler` shows the daily scheduler status.
+- `POST /api/jobs` submits a new job advertisement (authenticated users; created with status `pending`).
+- `GET /api/jobs/mine` lists the authenticated user's own submissions with their status.
+- `POST /api/admin/import` re-imports JSON seed data (admin only).
+- `POST /api/admin/scrape/{scraper_name}?limit=3` runs one existing scraper (`kariera`, `jobs`, `mkjob`) and imports the output (admin only).
+- `POST /api/admin/scrape-all` runs all scraper integrations immediately (admin only).
+- `GET /api/admin/scheduler` shows the daily scheduler status (admin only).
+
+## Authentication & Moderation
+
+The app has registered users and one bootstrapped admin account. Anyone can browse jobs; logged-in users can submit job advertisements, which appear publicly only after an admin approves them.
+
+- `POST /api/auth/register` creates an account and returns a JWT access token.
+- `POST /api/auth/login` logs in and returns a JWT access token.
+- `GET /api/auth/me` returns the current user.
+- `GET /api/admin/jobs?status=pending|approved|rejected|all` lists user-submitted jobs for moderation (admin only).
+- `POST /api/admin/jobs/{id}/approve` / `POST /api/admin/jobs/{id}/reject` moderates a submission (admin only).
+
+Send the token as `Authorization: Bearer <token>`. Scraped jobs are imported as `approved`; user submissions start as `pending`.
+
+The admin account is created automatically on startup and is configured with environment variables (defaults shown):
+
+- `ADMIN_EMAIL=admin@nvdjobs.mk`
+- `ADMIN_PASSWORD=admin123`
+- `JWT_SECRET=change-me-in-production`
+- `ACCESS_TOKEN_EXPIRE_MINUTES=720`
+
+Change `ADMIN_PASSWORD` and `JWT_SECRET` before deploying anywhere public.
+
+Frontend pages: `/login`, `/register`, `/submit` (add a job), `/my-jobs` (own submissions and their status) and `/admin/approvals` (admin moderation queue).
 
 ## Scheduled Scraping
 

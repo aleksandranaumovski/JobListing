@@ -1,16 +1,21 @@
 from math import ceil
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import asc, desc, func, or_, select
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_user, get_current_user_optional
 from app.db.session import get_db
 from app.models.job import Job, Source
-from app.schemas.job import FiltersRead, JobDetail, JobPage, JobRead, PageMeta
+from app.models.user import ROLE_ADMIN, User
+from app.schemas.job import FiltersRead, JobDetail, JobPage, JobRead, JobSubmissionCreate, PageMeta
 from app.core.config import get_settings
 from app.services.normalization import current_date
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
+
+USER_SOURCE_NAME = "ТвојПознаник"
 
 
 def _to_read(job: Job) -> JobRead:
@@ -29,6 +34,7 @@ def _to_read(job: Job) -> JobRead:
         salary=job.salary,
         is_new=job.is_new,
         scraped_at=job.scraped_at,
+        status=job.status,
     )
 
 
@@ -46,7 +52,7 @@ def list_jobs(
     sort: str = Query("newest", pattern="^(newest|oldest)$"),
 ) -> JobPage:
     today = current_date(get_settings().scheduler_timezone)
-    filters = [or_(Job.active_until.is_(None), Job.active_until >= today)]
+    filters = [Job.status == Job.STATUS_APPROVED, or_(Job.active_until.is_(None), Job.active_until >= today)]
     if q:
         search_vector = func.to_tsvector(
             "simple",
@@ -93,7 +99,14 @@ def list_jobs(
 @router.get("/filters", response_model=FiltersRead, summary="List available filter values")
 def filters(db: Session = Depends(get_db)) -> FiltersRead:
     def values(column):
-        return list(db.scalars(select(column).where(column.is_not(None)).distinct().order_by(column)).all())
+        return list(
+            db.scalars(
+                select(column)
+                .where(column.is_not(None), Job.status == Job.STATUS_APPROVED)
+                .distinct()
+                .order_by(column)
+            ).all()
+        )
 
     return FiltersRead(
         cities=values(Job.city),
@@ -103,11 +116,76 @@ def filters(db: Session = Depends(get_db)) -> FiltersRead:
     )
 
 
+@router.post("", response_model=JobDetail, status_code=201, summary="Submit a job advertisement (requires approval)")
+def submit_job(
+    body: JobSubmissionCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> JobDetail:
+    source = db.scalar(select(Source).where(Source.name == USER_SOURCE_NAME))
+    if not source:
+        source = Source(name=USER_SOURCE_NAME, base_url=None)
+        db.add(source)
+        db.flush()
+
+    job_id = str(uuid4())
+    job = Job(
+        id=job_id,
+        source_id=source.id,
+        source_key=f"user-{job_id}",
+        title=body.title.strip(),
+        company=body.company.strip(),
+        city=body.city.strip() if body.city else None,
+        location=body.location or body.city,
+        category=body.category,
+        employment_type=body.employment_type,
+        url=body.url,
+        posted_at=current_date(get_settings().scheduler_timezone),
+        active_until=body.active_until,
+        salary=body.salary,
+        is_new=True,
+        raw_text=body.description,
+        source_payload={"submitted_via": "web-form"},
+        status=Job.STATUS_PENDING,
+        created_by_id=user.id,
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    data = _to_read(job).model_dump()
+    return JobDetail(**data, raw_text=job.raw_text, source_payload=job.source_payload)
+
+
+@router.get("/mine", response_model=JobPage, summary="List my submitted job advertisements")
+def my_jobs(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(12, ge=1, le=100),
+) -> JobPage:
+    base = select(Job).where(Job.created_by_id == user.id).order_by(desc(Job.created_at))
+    total = db.scalar(select(func.count(Job.id)).where(Job.created_by_id == user.id)) or 0
+    jobs = db.scalars(base.offset((page - 1) * page_size).limit(page_size)).all()
+    return JobPage(
+        items=[_to_read(job) for job in jobs],
+        meta=PageMeta(page=page, page_size=page_size, total=total, pages=ceil(total / page_size) if total else 0),
+    )
+
+
 @router.get("/{job_id}", response_model=JobDetail, summary="Job details")
-def job_details(job_id: str, db: Session = Depends(get_db)) -> JobDetail:
+def job_details(
+    job_id: str,
+    db: Session = Depends(get_db),
+    user: User | None = Depends(get_current_user_optional),
+) -> JobDetail:
     today = current_date(get_settings().scheduler_timezone)
     job = db.get(Job, job_id)
     if not job or (job.active_until and job.active_until < today):
         raise HTTPException(status_code=404, detail="Job not found")
+    if job.status != Job.STATUS_APPROVED:
+        is_owner = user is not None and job.created_by_id == user.id
+        is_admin = user is not None and user.role == ROLE_ADMIN
+        if not (is_owner or is_admin):
+            raise HTTPException(status_code=404, detail="Job not found")
     data = _to_read(job).model_dump()
     return JobDetail(**data, raw_text=job.raw_text, source_payload=job.source_payload)

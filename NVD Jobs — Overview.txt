@@ -1,0 +1,58 @@
+NVD Jobs — Overview                                                                                                                                                               
+                                                                                                                                                                                    
+  A full-stack job-advertisement aggregator for the North Macedonian job market. It scrapes job listings from three sources (Kariera.mk, Jobs.com.mk, MKJob/agency site), normalizes
+  them into a database, and serves them through a REST API to a web UI. Everything is orchestrated with Docker Compose.                                                             
+                                                                                                                                                                                    
+  Architecture (4 tiers)                                                                                                                                                            
+                                                                                                                                                                                    
+  ┌─────────────┐     ┌──────────────┐     ┌──────────────┐     ┌────────────┐                                                                                                      
+  │  Scrapers   │───▶│   Backend     │───▶│  PostgreSQL   │◀───│  Frontend  │                                                                                                       
+  │  (Python)   │JSON │   (FastAPI)   │ ORM │   (jobs +     │ API │  (Angular) │                                                                                                    
+  │  3 sources  │     │  + Scheduler  │     │   sources)    │     │            │                                                                                                    
+  └─────────────┘     └──────────────┘     └──────────────┘     └────────────┘                                                                                                      
+         Playwright/          Alembic migrations,      JSONB + full-text      Nginx-served                                                                                          
+         BeautifulSoup        importer, normalizer      search index          standalone app                                                                                        
+                                                                                            
+Languages & tech per layer                                                                                                                                                        
+                                                                                                                                                                                    
+  ┌────────────────────────┬────────────────────────────────┬─────────────────────────────────────────────────────────────────────────────────────────┐                             
+  │         Layer          │            Language            │                                        Key tech                                         │                             
+  ├────────────────────────┼────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤                             
+  │ Scrapers (Scrapping_*) │ Python                         │ Playwright + BeautifulSoup, output as JSON seed files                                   │                             
+  ├────────────────────────┼────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤                             
+  │ Backend (backend/)     │ Python                         │ FastAPI, SQLAlchemy 2.0, Alembic (migrations), APScheduler, Pydantic, psycopg3, Uvicorn │                             
+  ├────────────────────────┼────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤                             
+  │ Database (database/)   │ SQL                            │ PostgreSQL 17                                                                           │                             
+  ├────────────────────────┼────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤                             
+  │ Frontend (frontend/)   │ TypeScript                     │ Angular 21 (standalone components), RxJS                                                │                             
+  ├────────────────────────┼────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤                             
+  │ Infra (docker/, root)  │ YAML / Dockerfile / Nginx conf │ Docker Compose, Nginx                                                                   │                             
+  └────────────────────────┴────────────────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────┘                             
+                                                                         
+How the pieces fit together                                                                                                                                                       
+                                                                                                                                                                                    
+  1. Scraping layer — Three standalone Python scrapers (Scrapping_Agencija, Scrapping_Jobs, Scrapping_KarieraMk), each targeting one job site using Playwright (browser automation) 
+  and BeautifulSoup (HTML parsing). They dump raw listings to JSON files that act as seed data.                                                                                     
+                                                                                                                                                                                    
+  2. Backend (FastAPI) — the heart of the app, organized cleanly:                                                                                                                   
+  - app/api/ — route handlers: jobs.py (public list/detail/filters) and admin.py (import, trigger scrapers, scheduler status)                                                       
+  - app/models/job.py — SQLAlchemy ORM models (sources, jobs)                                                                                                                       
+  - app/schemas/job.py — Pydantic request/response schemas                                                                                                                          
+  - app/services/ — the business logic:                                                                                                                                             
+    - importer.py — loads JSON into DB, drops expired listings                                                                                                                      
+    - normalization.py — maps each source's different field shape into one canonical schema                                                                                         
+    - scraper_runner.py — invokes the original scraper scripts on demand                                                                                                            
+    - scheduler.py — APScheduler job running all scrapers daily at 00:00 (Europe/Skopje)                                                                                            
+  - alembic/ — versioned DB migrations, run automatically on startup via entrypoint.sh
+3. PostgreSQL — Two tables. sources (site name + base URL) and jobs, which stores normalized searchable columns plus a source_payload JSONB column that preserves the original    
+  scraped record intact. Indexed for pagination, filtering, and PostgreSQL full-text search.                                                                                        
+                                                                                                                                                                                    
+  4. Frontend (Angular) — A standalone-component SPA (no NgModules). core/jobs-api.service.ts calls the API; feature components render a jobs list (jobs-page, job-card) and detail 
+  view (job-detail). Served in production by Nginx, which also proxies API calls.                                                                                                   
+                                                                                                                                                                                    
+  Notable design decisions                                                                                                                                                          
+                                                                                                                                                                                    
+  - Preserve-then-normalize: every raw scrape is kept in JSONB, so no source data is lost even as fields are normalized for search.                                                 
+  - Self-seeding on startup: the backend runs migrations and imports all JSON seeds when the container boots — one docker compose up --build gives a working system.                
+  - Automatic freshness: the daily scheduler re-scrapes and the importer deletes listings whose active_until date has passed.                                                       
+                                                                                                                                        

@@ -16,6 +16,13 @@ class Settings(BaseSettings):
     scraper_schedule_minute: int = 0
     scraper_default_limit: int = 5
 
+    jwt_secret: str = "change-me-in-production"
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 720
+    admin_email: str = "admin@nvdjobs.mk"
+    admin_password: str = "admin123"
+    admin_full_name: str = "Администратор"
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
 
